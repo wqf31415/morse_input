@@ -1,0 +1,190 @@
+name: Build Multi-Platform Apps
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build-backend:
+    name: Build Spring Boot Backend
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [jhi-serva, jhi-servb]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build with Maven
+        run: |
+          cd ${{ matrix.app }}
+          chmod +x mvnw
+          ./mvnw clean package -DskipTests -Pprod
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-jar
+          path: ${{ matrix.app }}/target/*.jar
+
+  build-windows:
+    name: Build Windows App
+    runs-on: windows-latest
+    needs: build-backend
+    strategy:
+      matrix:
+        app: [jhi-serva, jhi-servb]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 (for jpackage)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Download backend artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.app }}-jar
+
+      - name: Find JAR file
+        id: find-jar
+        run: |
+          $jarFile = Get-ChildItem -Filter *.jar -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          echo "JAR_FILE=$jarFile" >> $env:GITHUB_OUTPUT
+          echo "APP_NAME=${{ matrix.app }}" >> $env:GITHUB_OUTPUT
+
+      - name: Create Windows Installer with jpackage
+        run: |
+          jpackage --input . `
+                   --dest . `
+                   --name ${{ steps.find-jar.outputs.APP_NAME }} `
+                   --main-jar (Split-Path -Leaf ${{ steps.find-jar.outputs.JAR_FILE }}) `
+                   --main-class org.springframework.boot.loader.JarLauncher `
+                   --type msi `
+                   --app-version 1.0.0 `
+                   --vendor "My Company" `
+                   --win-dir-chooser `
+                   --win-menu `
+                   --win-shortcut
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-windows
+          path: '*.msi'
+
+  build-android:
+    name: Build Android App
+    runs-on: ubuntu-latest
+    needs: build-backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          build-tools: 34.0.0
+          ndk: 25.2.9519653
+
+      - name: Download backend artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Build Android APK/AAB
+        run: |
+          echo "Building Android APK/AAB..."
+          # 这里添加您的Android应用构建命令
+          # 例如进入android目录，运行./gradlew assembleRelease
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-app
+          path: |
+            **/*.apk
+            **/*.aab
+
+  build-harmony:
+    name: Build HarmonyOS App
+    runs-on: ubuntu-latest
+    needs: build-backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up DevEco Studio environment (if using)
+        run: |
+          echo "Setting up HarmonyOS build environment..."
+          # HarmonyOS开发通常需要DevEco Studio
+          # 您可以在这里配置相应的构建环境
+
+      - name: Download backend artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Build HarmonyOS HAP
+        run: |
+          echo "Building HarmonyOS HAP..."
+          # 这里添加您的HarmonyOS应用构建命令
+          # 例如使用hvigorw等工具
+
+      - name: Upload HarmonyOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: harmonyos-app
+          path: |
+            **/*.hap
+            **/*.app
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-windows, build-android, build-harmony]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            **/*.jar
+            **/*.apk
+            **/*.aab
+            **/*.hap
+            **/*.app
+            **/*.exe
+          tag_name: v${{ github.run_number }}
+          name: Release v${{ github.run_number }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
