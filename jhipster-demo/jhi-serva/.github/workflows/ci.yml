@@ -1,0 +1,275 @@
+name: 持续集成
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+      - 'release/**'
+
+env:
+  JAVA_VERSION: '11'
+  MAVEN_OPTS: -Xmx1024m -Xms256m
+
+jobs:
+  代码质量检查:
+    name: 代码质量
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 设置JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: 缓存Maven依赖
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: 检查代码风格
+        run: ./mvnw checkstyle:check -pl jhi-serva
+
+      - name: 运行Sonar扫描
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./mvnw sonar:sonar \
+            -Dsonar.projectKey=${{ github.repository }} \
+            -Dsonar.host.url=https://sonarcloud.io
+
+  单元测试:
+    name: 单元测试（${{ matrix.module }}）
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module: [jhi-serva, jhi-servb]
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: 缓存Maven依赖
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: 运行单元测试
+        working-directory: ./${{ matrix.module }}
+        run: ./mvnw test
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results-${{ matrix.module }}
+          path: ${{ matrix.module }}/target/surefire-reports/
+          retention-days: 7
+
+      - name: 生成测试覆盖报告
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report-${{ matrix.module }}
+          path: ${{ matrix.module }}/target/site/jacoco/
+          retention-days: 14
+
+  集成测试:
+    name: 集成测试
+    runs-on: ubuntu-latest
+    needs: [单元测试]
+    if: github.event_name == 'push'
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: 启动MySQL服务
+        uses: supercharge/mysql@1.7.0
+        with:
+          mysql version: '8.0'
+          mysql database: serva_test
+          mysql user: root
+          mysql password: root
+
+      - name: 运行集成测试（jhi-serva）
+        working-directory: ./jhi-serva
+        env:
+          SPRING_PROFILES_ACTIVE: testprod
+          JHIPSTER_SLEEP: 10
+        run: |
+          ./mvnw verify -Pprod,!e2e
+
+      - name: 上传集成测试报告
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: integration-test-results
+          path: jhi-serva/target/failsafe-reports/
+          retention-days: 7
+
+  构建镜像:
+    name: 构建Docker镜像
+    runs-on: ubuntu-latest
+    needs: [集成测试]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: 登录到Docker注册表
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 提取元数据用于Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ghcr.io/${{ github.repository }}/serva
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix=
+
+      - name: 构建并推送Docker镜像（jhi-serva）
+        uses: docker/build-push-action@v4
+        with:
+          context: ./jhi-serva
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  构建可执行包:
+    name: 构建平台包（${{ matrix.os }}）
+    runs-on: ${{ matrix.os }}
+    needs: [代码质量检查]
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            artifact-name: serva-linux-x64
+          - os: windows-latest
+            platform: windows
+            artifact-name: serva-windows-x64
+          - os: macos-latest
+            platform: macos
+            artifact-name: serva-macos-x64
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: 构建可执行JAR
+        working-directory: ./jhi-serva
+        run: ./mvnw package -DskipTests -Pprod
+
+      - name: 创建分发包
+        shell: bash
+        run: |
+          mkdir -p dist
+          cd jhi-serva/target
+          cp *.jar ../dist/
+          cd ../..
+          if [ "${{ matrix.platform }}" == "linux" ] || [ "${{ matrix.platform }}" == "macos" ]; then
+            chmod +x dist/*.jar
+          fi
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: |
+            dist/*.jar
+          retention-days: 30
+
+  发布预览版本:
+    name: 发布预览版本
+    runs-on: ubuntu-latest
+    needs: [构建可执行包]
+    if: startsWith(github.ref, 'refs/heads/release/')
+    permissions:
+      contents: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载所有构建产物
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: 创建发布说明
+        run: |
+          echo "# 预览版本发布" > release-notes.md
+          echo "" >> release-notes.md
+          echo "分支：${{ github.ref_name }}" >> release-notes.md
+          echo "日期：$(date '+%Y-%m-%d %H:%M:%S')" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "## 构建产物" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "### PC平台" >> release-notes.md
+          for dir in artifacts/serva-*; do
+            echo "- ${dir#artifacts/}: $(ls $dir/*.jar 2>/dev/null | xargs -I {} basename {})" >> release-notes.md
+          done
+
+      - name: 上传发布产物
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/**/*
+          draft: true
+          prerelease: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
