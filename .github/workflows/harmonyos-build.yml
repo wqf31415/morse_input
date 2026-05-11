@@ -1,0 +1,79 @@
+name: HarmonyOS Build
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  build-harmonyos:
+    name: Build HarmonyOS App
+    runs-on: ubuntu-latest
+    container:
+      image: huaweicloud/openharmony-sdk:latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup HarmonyOS SDK
+        run: |
+          export PATH=$PATH:/opt/harmony-sdk/compiler/bin
+          export OHOS_SDK=/opt/harmony-sdk
+
+      - name: Build HarmonyOS App
+        run: |
+          echo "注意：鸿蒙原生应用需要使用 DevEco Studio 或华为云构建服务"
+          echo "Flutter 项目转换为鸿蒙应用需要额外配置"
+          echo "参考: https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ide-software-configuration"
+
+  build-harmonyos-alternative:
+    name: Build for OpenHarmony
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install oh-vim
+        run: npm install -g oh-vim
+
+      - name: Build OpenHarmony App
+        run: |
+          echo "OpenHarmony 构建需要在 Linux 环境下配置完整的 SDK"
+          echo "建议使用华为官方 DevEco Studio 或云端构建服务"
+          echo "参考: https://www.openharmony.cn/"
+
+  harmonyos-info:
+    name: HarmonyOS Build Info
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Display Build Info
+        run: |
+          echo "=== 鸿蒙构建说明 ==="
+          echo ""
+          echo "鸿蒙应用构建有以下推荐方式："
+          echo ""
+          echo "1. 华为 DevEco Studio (推荐)"
+          echo "   - 下载地址: https://developer.huawei.com/consumer/cn/develop/devoassist"
+          echo "   - 支持完整的鸿蒙应用开发和打包"
+          echo ""
+          echo "2. 华为云构建服务"
+          echo "   - 使用华为云 CodeArts CI"
+          echo "   - 参考: https://support.huaweicloud.com/devcloud-ide/ide.html"
+          echo ""
+          echo "3. GitHub Actions (有限支持)"
+          echo "   - 需要自行配置 OpenHarmony SDK"
+          echo "   - 构建脚本复杂度较高"
+          echo ""
+          echo "Flutter 转鸿蒙项目建议："
+          echo "- 使用华为提供的 Flutter-ohos 插件"
+          echo "- 参考: https://gitee.com/openharmony-sig/flutter_ohos"
