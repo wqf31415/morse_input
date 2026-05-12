@@ -1,4 +1,4 @@
-name: HarmonyOS Build
+name: HarmonyOS Build Guide
 
 on:
   push:
@@ -6,74 +6,71 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-harmonyos:
-    name: Build HarmonyOS App
-    runs-on: ubuntu-latest
-    container:
-      image: huaweicloud/openharmony-sdk:latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Setup HarmonyOS SDK
-        run: |
-          export PATH=$PATH:/opt/harmony-sdk/compiler/bin
-          export OHOS_SDK=/opt/harmony-sdk
-
-      - name: Build HarmonyOS App
-        run: |
-          echo "注意：鸿蒙原生应用需要使用 DevEco Studio 或华为云构建服务"
-          echo "Flutter 项目转换为鸿蒙应用需要额外配置"
-          echo "参考: https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ide-software-configuration"
-
-  build-harmonyos-alternative:
-    name: Build for OpenHarmony
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: Install oh-vim
-        run: npm install -g oh-vim
-
-      - name: Build OpenHarmony App
-        run: |
-          echo "OpenHarmony 构建需要在 Linux 环境下配置完整的 SDK"
-          echo "建议使用华为官方 DevEco Studio 或云端构建服务"
-          echo "参考: https://www.openharmony.cn/"
-
   harmonyos-info:
-    name: HarmonyOS Build Info
+    name: HarmonyOS Build Guide
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Display Build Info
+      - name: Display Build Guide
         run: |
-          echo "=== 鸿蒙构建说明 ==="
+          echo "=========================================="
+          echo "     鸿蒙 (HarmonyOS) 应用构建指南"
+          echo "=========================================="
           echo ""
-          echo "鸿蒙应用构建有以下推荐方式："
+          echo "当前项目为标准 Flutter 项目。"
+          echo "由于鸿蒙生态的特殊性，建议使用以下方案构建："
           echo ""
-          echo "1. 华为 DevEco Studio (推荐)"
-          echo "   - 下载地址: https://developer.huawei.com/consumer/cn/develop/devoassist"
-          echo "   - 支持完整的鸿蒙应用开发和打包"
+          echo "----------------------------------------"
+          echo "方案一：华为 DevEco Studio (推荐)"
+          echo "----------------------------------------"
+          echo "1. 下载 DevEco Studio"
+          echo "   https://developer.huawei.com/consumer/cn/develop/devoassist"
           echo ""
-          echo "2. 华为云构建服务"
-          echo "   - 使用华为云 CodeArts CI"
-          echo "   - 参考: https://support.huaweicloud.com/devcloud-ide/ide.html"
+          echo "2. 创建 Flutter-ohos 项目"
+          echo "   # 添加 flutter_ohos 依赖"
+          echo "   flutter pub add flutter_ohos"
           echo ""
-          echo "3. GitHub Actions (有限支持)"
-          echo "   - 需要自行配置 OpenHarmony SDK"
-          echo "   - 构建脚本复杂度较高"
+          echo "   # 或使用模板创建"
+          echo "   flutter create --platforms ohos my_app"
           echo ""
-          echo "Flutter 转鸿蒙项目建议："
-          echo "- 使用华为提供的 Flutter-ohos 插件"
-          echo "- 参考: https://gitee.com/openharmony-sig/flutter_ohos"
+          echo "3. 在 DevEco Studio 中打开项目"
+          echo "   - 工具会自动识别并配置鸿蒙项目"
+          echo ""
+          echo "4. 构建 HAP 安装包"
+          echo "   Build > Build HAP(s) > Release"
+          echo ""
+          echo "----------------------------------------"
+          echo "方案二：华为云构建服务"
+          echo "----------------------------------------"
+          echo "1. 注册华为开发者账号"
+          echo "   https://developer.huawei.com"
+          echo ""
+          echo "2. 使用 CodeArts CI"
+          echo "   https://support.huaweicloud.com/devcloud-ide/ide.html"
+          echo ""
+          echo "3. 优势："
+          echo "   - 无需本地配置 SDK"
+          echo "   - 原生支持鸿蒙构建环境"
+          echo "   - 可与企业账号集成"
+          echo ""
+          echo "----------------------------------------"
+          echo "方案三：Flutter 转鸿蒙 (flutter_ohos)"
+          echo "----------------------------------------"
+          echo "1. 参考文档："
+          echo "   https://gitee.com/openharmony-sig/flutter_ohos"
+          echo ""
+          echo "2. 必要步骤："
+          echo "   - 安装 OpenHarmony SDK"
+          echo "   - 配置环境变量 (OH_SDK_HOME)"
+          echo "   - 使用 flutter create --platforms ohos"
+          echo ""
+          echo "3. GitHub Actions 自动化："
+          echo "   - 需要自行配置构建环境"
+          echo "   - 复杂度较高，不推荐"
+          echo ""
+          echo "=========================================="
+          echo ""
+          echo "✓ Flutter-ohos 项目检测: ${{ github.event_name }}"
+          echo "✓ 工作流执行时间: $(date)"
